@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response, session
 from dotenv import load_dotenv
 import os
 
@@ -7,6 +7,26 @@ load_dotenv()
 
 # Initialize Flask App
 app = Flask(__name__)
+
+# ================================
+# Global Security Configurations
+# ================================
+# Set a strong secret key for session management
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'default-secret-key')
+
+# Disable session refresh on every request
+app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+
+# ================================
+# After-Request Hook to Set Cache-Control Headers
+# ================================
+@app.after_request
+def add_cache_control_headers(response):
+    """
+    Add Cache-Control headers to all responses to prevent sensitive data from being cached.
+    """
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    return response
 
 # ================================
 # Home Route
@@ -29,6 +49,11 @@ def login():
     Accepts JSON data with 'username' and 'password' for a simple authentication check.
     """
     data = request.json
+
+    # Validate input
+    if not isinstance(data, dict) or 'username' not in data or 'password' not in data:
+        return jsonify({"message": "Invalid input format ❌"}), 400
+
     username = data.get('username')
     password = data.get('password')
 
@@ -38,8 +63,13 @@ def login():
 
     # Check if the credentials match
     if username == correct_username and password == correct_password:
-        return jsonify({"message": "Login successful 🎉"}), 200
-    return jsonify({"message": "Invalid credentials ❌"}), 401
+        response = jsonify({"message": "Login successful 🎉"})
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+        return response, 200
+
+    response = jsonify({"message": "Invalid credentials ❌"})
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    return response, 401
 
 # ================================
 # Data Submission Endpoint
@@ -51,6 +81,11 @@ def submit():
     Accepts JSON data and returns the submitted data in the response.
     """
     data = request.json
+
+    # Validate input
+    if not isinstance(data, dict):
+        return jsonify({"message": "Invalid data format ❌"}), 400
+
     return jsonify({"message": "Data received ✅", "data": data}), 200
 
 # ================================
@@ -68,6 +103,11 @@ def manage_items():
     """
     if request.method == 'POST':
         item = request.json.get('item')
+
+        # Validate input
+        if not item:
+            return jsonify({"message": "Invalid item data ❌"}), 400
+
         items.append(item)
         return jsonify({"message": "Item added successfully 🛒", "items": items}), 201
 
@@ -85,12 +125,29 @@ def update_delete_item(item_id):
 
     if request.method == 'PUT':
         new_item = request.json.get('item')
+
+        # Validate input
+        if not new_item:
+            return jsonify({"message": "Invalid item data ❌"}), 400
+
         items[item_id] = new_item
         return jsonify({"message": "Item updated successfully 📝", "items": items}), 200
 
     if request.method == 'DELETE':
         items.pop(item_id)
         return jsonify({"message": "Item deleted successfully 🗑️", "items": items}), 200
+
+# ================================
+# Secure Session Management Example
+# ================================
+@app.route('/set-session')
+def set_session():
+    """
+    Example to demonstrate secure session usage.
+    """
+    session['user'] = 'example_user'
+    session.permanent = False  # Use temporary sessions
+    return jsonify({"message": "Session set successfully ✅"})
 
 # ================================
 # Run the Flask App
@@ -101,4 +158,3 @@ if __name__ == "__main__":
 
     # Run the app, binding to localhost and controlling debug mode via environment variables
     app.run(debug=debug_mode, host="127.0.0.1", port=5000)
-
